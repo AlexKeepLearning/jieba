@@ -1,3 +1,6 @@
+# -*- coding:utf-8 -*-
+# focus on modify __cut_DAG_NO_HMM
+
 from __future__ import absolute_import, unicode_literals
 __version__ = '0.39'
 __license__ = 'MIT'
@@ -15,6 +18,9 @@ from hashlib import md5
 from ._compat import *
 from . import finalseg
 
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
 if os.name == 'nt':
     from shutil import move as _replace_file
 else:
@@ -24,7 +30,6 @@ _get_abs_path = lambda path: os.path.normpath(os.path.join(os.getcwd(), path))
 
 DEFAULT_DICT = None
 DEFAULT_DICT_NAME = "dict.txt"
-
 log_console = logging.StreamHandler(sys.stderr)
 default_logger = logging.getLogger(__name__)
 default_logger.setLevel(logging.DEBUG)
@@ -40,9 +45,10 @@ re_eng = re.compile('[a-zA-Z0-9]', re.U)
 
 # \u4E00-\u9FD5a-zA-Z0-9+#&\._ : All non-space characters. Will be handled with re_han
 # \r\n|\s : whitespace characters. Will not be handled.
-re_han_default = re.compile("([\u4E00-\u9FD5a-zA-Z0-9+#&\._%]+)", re.U)
+#re_han_default = re.compile("([\u4E00-\u9FD5a-zA-Z0-9+#&\._%]+)", re.U)
+re_han_default = re.compile("([\u0900-\u097fa-zA-Z0-9+#&\._%\- ]+)", re.U)
 re_skip_default = re.compile("(\r\n|\s)", re.U)
-re_han_cut_all = re.compile("([\u4E00-\u9FD5]+)", re.U)
+re_han_cut_all = re.compile("([\u0900-\u097f]+)", re.U)
 re_skip_cut_all = re.compile("[^a-zA-Z0-9+#\n]", re.U)
 
 def setLogLevel(log_level):
@@ -61,7 +67,7 @@ class Tokenizer(object):
         self.total = 0
         self.user_word_tag_tab = {}
         self.initialized = False
-        self.tmp_dir = None
+        self.tmp_dir = _get_abs_path('')
         self.cache_file = None
 
     def __repr__(self):
@@ -73,15 +79,16 @@ class Tokenizer(object):
         f_name = resolve_filename(f)
         for lineno, line in enumerate(f, 1):
             try:
-                line = line.strip().decode('utf-8')
-                word, freq = line.split(' ')[:2]
+                line = line.strip().encode('utf-8').decode('utf-8')
+                word, freq = line.split('\t')[:2]
                 freq = int(freq)
                 lfreq[word] = freq
                 ltotal += freq
-                for ch in xrange(len(word)):
-                    wfrag = word[:ch + 1]
+                items = word.split()
+                for ch in xrange(len(items)):
+                    wfrag = ' '.join(items[:ch + 1])
                     if wfrag not in lfreq:
-                        lfreq[wfrag] = 0
+                        lfreq[  wfrag] = 0
             except ValueError:
                 raise ValueError(
                     'invalid dictionary entry in %s at Line %s: %s' % (f_name, lineno, line))
@@ -172,7 +179,7 @@ class Tokenizer(object):
         route[N] = (0, 0)
         logtotal = log(self.total)
         for idx in xrange(N - 1, -1, -1):
-            route[idx] = max((log(self.FREQ.get(sentence[idx:x + 1]) or 1) -
+            route[idx] = max((log(self.FREQ.get(' '.join(sentence[idx:x + 1])) or 1) -
                               logtotal + route[x + 1][0], x) for x in DAG[idx])
 
     def get_DAG(self, sentence):
@@ -187,7 +194,7 @@ class Tokenizer(object):
                 if self.FREQ[frag]:
                     tmplist.append(i)
                 i += 1
-                frag = sentence[k:i + 1]
+                frag = ' '.join(sentence[k:i + 1])
             if not tmplist:
                 tmplist.append(k)
             DAG[k] = tmplist
@@ -207,6 +214,7 @@ class Tokenizer(object):
                         old_j = j
 
     def __cut_DAG_NO_HMM(self, sentence):
+        sentence = sentence.split()
         DAG = self.get_DAG(sentence)
         route = {}
         self.calc(sentence, DAG, route)
@@ -215,7 +223,7 @@ class Tokenizer(object):
         buf = ''
         while x < N:
             y = route[x][1] + 1
-            l_word = sentence[x:y]
+            l_word = ' '.join(sentence[x:y])
             if re_eng.match(l_word) and len(l_word) == 1:
                 buf += l_word
                 x = y
@@ -280,7 +288,7 @@ class Tokenizer(object):
             - HMM: Whether to use the Hidden Markov Model.
         '''
         sentence = strdecode(sentence)
-
+        sentence = sentence.replace(u'\u0964','\n')
         if cut_all:
             re_han = re_han_cut_all
             re_skip = re_skip_cut_all
